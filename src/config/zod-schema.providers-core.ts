@@ -311,6 +311,18 @@ const DiscordVoiceAutoJoinSchema = z
   })
   .strict();
 
+const DiscordVoiceSessionCutoffSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    cutoffMinutes: z.number().positive().default(40),
+    firstWarningMinutes: z.number().positive().default(35),
+    finalWarningSecondsBeforeCutoff: z.number().positive().default(30),
+    requireConfirmation: z.boolean().default(true),
+    autoRestartOnTimeout: z.boolean().default(true),
+  })
+  .strict()
+  .optional();
+
 const DiscordVoiceSchema = z
   .object({
     enabled: z.boolean().optional(),
@@ -318,6 +330,7 @@ const DiscordVoiceSchema = z
     daveEncryption: z.boolean().optional(),
     decryptionFailureTolerance: z.number().int().min(0).optional(),
     tts: TtsConfigSchema.optional(),
+    sessionCutoff: DiscordVoiceSessionCutoffSchema,
   })
   .strict()
   .optional();

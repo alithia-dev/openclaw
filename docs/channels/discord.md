@@ -925,6 +925,14 @@ Auto-join example:
           provider: "openai",
           openai: { voice: "alloy" },
         },
+        sessionCutoff: {
+          enabled: true,
+          cutoffMinutes: 40,
+          firstWarningMinutes: 35,
+          finalWarningSecondsBeforeCutoff: 30,
+          requireConfirmation: true,
+          autoRestartOnTimeout: true,
+        },
       },
     },
   },
@@ -934,6 +942,7 @@ Auto-join example:
 Notes:
 
 - `voice.tts` overrides `messages.tts` for voice playback only.
+- `voice.sessionCutoff` tracks each joined voice session by wall-clock time. When enabled, OpenClaw logs `session_runtime_countdown` / `session_runtime_warning` events, speaks warnings through the same TTS playback path used for assistant replies, and can leave/rejoin before the cutoff buffer expires.
 - Voice is enabled by default; set `channels.discord.voice.enabled=false` to disable it.
 - `voice.daveEncryption` and `voice.decryptionFailureTolerance` pass through to `@discordjs/voice` join options.
 - `@discordjs/voice` defaults are `daveEncryption=true` and `decryptionFailureTolerance=24` if unset.

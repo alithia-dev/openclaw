@@ -1376,6 +1376,20 @@ export const FIELD_HELP: Record<string, string> = {
     "Consecutive decrypt failures before DAVE attempts session recovery (passed to @discordjs/voice; default: 24).",
   "channels.discord.voice.tts":
     "Optional TTS overrides for Discord voice playback (merged with messages.tts).",
+  "channels.discord.voice.sessionCutoff":
+    "Wall-clock Discord voice session watchdog. When enabled, it logs runtime countdown events, speaks cutoff warnings through the same voice TTS playback path, and can auto-restart before a known provider cutoff.",
+  "channels.discord.voice.sessionCutoff.enabled":
+    "Enable runtime cutoff watchdog scheduling for Discord voice sessions.",
+  "channels.discord.voice.sessionCutoff.cutoffMinutes":
+    "Expected voice session runtime cutoff in minutes (default: 40).",
+  "channels.discord.voice.sessionCutoff.firstWarningMinutes":
+    "Primary spoken warning time after session start, in minutes (default: 35).",
+  "channels.discord.voice.sessionCutoff.finalWarningSecondsBeforeCutoff":
+    "Final spoken warning lead time before the cutoff, in seconds (default: 30).",
+  "channels.discord.voice.sessionCutoff.requireConfirmation":
+    "Emit a restart-request event before auto-restart fallback when practical (default: true).",
+  "channels.discord.voice.sessionCutoff.autoRestartOnTimeout":
+    "Automatically leave and rejoin before the cutoff buffer expires if still connected (default: true).",
   "channels.discord.intents.presence":
     "Enable the Guild Presences privileged intent. Must also be enabled in the Discord Developer Portal. Allows tracking user activities (e.g. Spotify). Default: false.",
   "channels.discord.intents.guildMembers":

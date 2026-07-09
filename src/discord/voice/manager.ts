@@ -48,6 +48,11 @@ const SPEAKING_READY_TIMEOUT_MS = 60_000;
 const DECRYPT_FAILURE_WINDOW_MS = 30_000;
 const DECRYPT_FAILURE_RECONNECT_THRESHOLD = 3;
 const DECRYPT_FAILURE_PATTERN = /DecryptionFailed\(/;
+const SESSION_CUTOFF_DEFAULT_CUTOFF_MINUTES = 40;
+const SESSION_CUTOFF_DEFAULT_FIRST_WARNING_MINUTES = 35;
+const SESSION_CUTOFF_DEFAULT_FINAL_WARNING_SECONDS = 30;
+const SESSION_CUTOFF_LOCAL_HEARTBEAT_MINUTES = 30;
+const SESSION_CUTOFF_PREPARE_SECONDS_BEFORE_CUTOFF = 120;
 
 const logger = createSubsystemLogger("discord/voice");
 
@@ -66,6 +71,7 @@ type VoiceSessionEntry = {
   guildId: string;
   channelId: string;
   sessionChannelId: string;
+  startedAt: number;
   route: ReturnType<typeof resolveAgentRoute>;
   connection: VoiceConnection;
   player: AudioPlayer;
@@ -75,8 +81,24 @@ type VoiceSessionEntry = {
   decryptFailureCount: number;
   lastDecryptFailureAt: number;
   decryptRecoveryInFlight: boolean;
+  sessionRuntimeTimers: ReturnType<typeof setTimeout>[];
   stop: () => void;
 };
+
+type SessionCutoffConfig = {
+  enabled: boolean;
+  cutoffMs: number;
+  firstWarningMs: number;
+  finalWarningMsBeforeCutoff: number;
+  requireConfirmation: boolean;
+  autoRestartOnTimeout: boolean;
+};
+
+type SessionRuntimeEvent =
+  | "session_runtime_countdown"
+  | "session_runtime_warning"
+  | "session_restart_requested"
+  | "session_restart_started";
 
 function mergeTtsConfig(base: TtsConfig, override?: TtsConfig): TtsConfig {
   if (!override) {
@@ -126,6 +148,39 @@ function resolveVoiceTtsConfig(params: { cfg: OpenClawConfig; override?: TtsConf
     },
   };
   return { cfg, resolved: resolveTtsConfig(cfg) };
+}
+
+function resolveSessionCutoffConfig(
+  config: DiscordAccountConfig["voice"],
+): SessionCutoffConfig | null {
+  const raw = config?.sessionCutoff;
+  if (!raw?.enabled) {
+    return null;
+  }
+  const cutoffMinutes = raw.cutoffMinutes ?? SESSION_CUTOFF_DEFAULT_CUTOFF_MINUTES;
+  const firstWarningMinutes =
+    raw.firstWarningMinutes ?? SESSION_CUTOFF_DEFAULT_FIRST_WARNING_MINUTES;
+  const finalWarningSeconds =
+    raw.finalWarningSecondsBeforeCutoff ?? SESSION_CUTOFF_DEFAULT_FINAL_WARNING_SECONDS;
+  const cutoffMs = Math.max(1, cutoffMinutes * 60_000);
+  return {
+    enabled: true,
+    cutoffMs,
+    firstWarningMs: Math.min(Math.max(1, firstWarningMinutes * 60_000), cutoffMs),
+    finalWarningMsBeforeCutoff: Math.min(Math.max(1, finalWarningSeconds * 1000), cutoffMs),
+    requireConfirmation: raw.requireConfirmation ?? true,
+    autoRestartOnTimeout: raw.autoRestartOnTimeout ?? true,
+  };
+}
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes <= 0) {
+    return `${seconds}s`;
+  }
+  return seconds === 0 ? `${minutes}m` : `${minutes}m ${seconds}s`;
 }
 
 function buildWavBuffer(pcm: Buffer): Buffer {
@@ -338,7 +393,7 @@ export class DiscordVoiceManager {
   status(): VoiceOperationResult[] {
     return Array.from(this.sessions.values()).map((session) => ({
       ok: true,
-      message: `connected: guild ${session.guildId} channel ${session.channelId}`,
+      message: this.formatSessionStatusMessage(session),
       guildId: session.guildId,
       channelId: session.channelId,
     }));
@@ -442,6 +497,7 @@ export class DiscordVoiceManager {
       guildId,
       channelId,
       sessionChannelId,
+      startedAt: Date.now(),
       route,
       connection,
       player,
@@ -451,6 +507,7 @@ export class DiscordVoiceManager {
       decryptFailureCount: 0,
       lastDecryptFailureAt: 0,
       decryptRecoveryInFlight: false,
+      sessionRuntimeTimers: [],
       stop: () => {
         if (speakingHandler) {
           connection.receiver.speaking.off("start", speakingHandler);
@@ -464,6 +521,7 @@ export class DiscordVoiceManager {
         if (playerErrorHandler) {
           player.off("error", playerErrorHandler);
         }
+        this.clearSessionRuntimeTimers(entry);
         player.stop();
         connection.destroy();
       },
@@ -499,6 +557,7 @@ export class DiscordVoiceManager {
     player.on("error", playerErrorHandler);
 
     this.sessions.set(guildId, entry);
+    this.startSessionRuntimeWatchdog(entry);
     return {
       ok: true,
       message: `Joined <#${channelId}>.`,
@@ -545,6 +604,137 @@ export class DiscordVoiceManager {
     entry.playbackQueue = entry.playbackQueue
       .then(task)
       .catch((err) => logger.warn(`discord voice: playback failed: ${formatErrorMessage(err)}`));
+  }
+
+  private startSessionRuntimeWatchdog(entry: VoiceSessionEntry): void {
+    const config = resolveSessionCutoffConfig(this.params.discordConfig.voice);
+    if (!config?.enabled) {
+      return;
+    }
+    const schedule = (delayMs: number, task: () => void) => {
+      const timer = setTimeout(task, Math.max(0, delayMs));
+      timer.unref();
+      entry.sessionRuntimeTimers.push(timer);
+    };
+    const cutoffAt = entry.startedAt + config.cutoffMs;
+    const emit = (event: SessionRuntimeEvent, message: string) => {
+      logger.info(
+        `discord voice: ${event}: guild ${entry.guildId} channel ${entry.channelId}: ${message}`,
+      );
+    };
+    const scheduleAt = (targetAt: number, task: () => void) =>
+      schedule(targetAt - Date.now(), task);
+
+    scheduleAt(entry.startedAt + SESSION_CUTOFF_LOCAL_HEARTBEAT_MINUTES * 60_000, () => {
+      if (!this.isCurrentSession(entry)) {
+        return;
+      }
+      const remainingMs = Math.max(0, cutoffAt - Date.now());
+      emit(
+        "session_runtime_countdown",
+        `runtime ${formatDuration(Date.now() - entry.startedAt)}, cutoff in ${formatDuration(
+          remainingMs,
+        )}`,
+      );
+    });
+
+    scheduleAt(entry.startedAt + config.firstWarningMs, () => {
+      if (!this.isCurrentSession(entry)) {
+        return;
+      }
+      emit("session_runtime_warning", "primary spoken cutoff warning");
+      void this.speakToSession(
+        entry,
+        "Quick heads up: this voice session is getting close to the runtime limit. I'm going to help restart it cleanly soon so we don't lose each other.",
+      );
+    });
+
+    scheduleAt(cutoffAt - SESSION_CUTOFF_PREPARE_SECONDS_BEFORE_CUTOFF * 1000, () => {
+      if (!this.isCurrentSession(entry)) {
+        return;
+      }
+      emit("session_runtime_warning", "restart preparation warning");
+      void this.speakToSession(
+        entry,
+        "Stronger heads up: we're inside the last couple of minutes for this voice session. I'm preparing a clean restart path now.",
+      );
+      if (config.requireConfirmation) {
+        emit("session_restart_requested", "waiting briefly before auto-restart fallback");
+      }
+    });
+
+    scheduleAt(cutoffAt - config.finalWarningMsBeforeCutoff, () => {
+      if (!this.isCurrentSession(entry)) {
+        return;
+      }
+      emit("session_runtime_warning", "final spoken cutoff warning");
+      void this.speakToSession(
+        entry,
+        "Final heads up: I'm restarting this voice session now so the runtime cutoff doesn't drop us blindly.",
+      );
+    });
+
+    if (config.autoRestartOnTimeout) {
+      const restartDelayAfterFinalWarning = Math.min(5000, config.finalWarningMsBeforeCutoff / 2);
+      scheduleAt(
+        cutoffAt - config.finalWarningMsBeforeCutoff + restartDelayAfterFinalWarning,
+        () => {
+          if (!this.isCurrentSession(entry)) {
+            return;
+          }
+          emit("session_restart_started", "auto-restart fallback started");
+          void this.restartSessionForCutoff(entry);
+        },
+      );
+    }
+  }
+
+  private formatSessionStatusMessage(entry: VoiceSessionEntry): string {
+    const base = `connected: guild ${entry.guildId} channel ${entry.channelId}`;
+    const config = resolveSessionCutoffConfig(this.params.discordConfig.voice);
+    if (!config?.enabled) {
+      return base;
+    }
+    const runtimeMs = Date.now() - entry.startedAt;
+    const remainingMs = Math.max(0, entry.startedAt + config.cutoffMs - Date.now());
+    return `${base} (runtime ${formatDuration(runtimeMs)}, cutoff in ${formatDuration(
+      remainingMs,
+    )})`;
+  }
+
+  private clearSessionRuntimeTimers(entry: VoiceSessionEntry): void {
+    for (const timer of entry.sessionRuntimeTimers) {
+      clearTimeout(timer);
+    }
+    entry.sessionRuntimeTimers = [];
+  }
+
+  private isCurrentSession(entry: VoiceSessionEntry): boolean {
+    return this.sessions.get(entry.guildId) === entry;
+  }
+
+  private async restartSessionForCutoff(entry: VoiceSessionEntry): Promise<void> {
+    if (!this.isCurrentSession(entry)) {
+      return;
+    }
+    const { guildId, channelId } = entry;
+    const leaveResult = await this.leave({ guildId });
+    if (!leaveResult.ok) {
+      logger.warn(`discord voice: cutoff restart leave failed: ${leaveResult.message}`);
+      return;
+    }
+    const joinResult = await this.join({ guildId, channelId });
+    if (!joinResult.ok) {
+      logger.warn(`discord voice: cutoff restart join failed: ${joinResult.message}`);
+      return;
+    }
+    const restarted = this.sessions.get(guildId);
+    if (restarted) {
+      await this.speakToSession(
+        restarted,
+        "I'm back. The previous voice session hit its runtime limit, but the handoff completed.",
+      );
+    }
   }
 
   private async handleSpeakingStart(entry: VoiceSessionEntry, userId: string) {
@@ -655,6 +845,10 @@ export class DiscordVoiceManager {
       `reply ok (${replyText.length} chars): guild ${entry.guildId} channel ${entry.channelId}`,
     );
 
+    await this.speakToSession(entry, replyText, userId);
+  }
+
+  private async speakToSession(entry: VoiceSessionEntry, replyText: string, userId?: string) {
     const { cfg: ttsCfg, resolved: ttsConfig } = resolveVoiceTtsConfig({
       cfg: this.params.cfg,
       override: this.params.discordConfig.voice?.tts,
@@ -663,7 +857,9 @@ export class DiscordVoiceManager {
     const speakText = directive.overrides.ttsText ?? directive.cleanedText.trim();
     if (!speakText) {
       logVoiceVerbose(
-        `tts skipped (empty): guild ${entry.guildId} channel ${entry.channelId} user ${userId}`,
+        `tts skipped (empty): guild ${entry.guildId} channel ${entry.channelId}${
+          userId ? ` user ${userId}` : ""
+        }`,
       );
       return;
     }

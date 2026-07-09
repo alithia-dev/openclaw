@@ -102,6 +102,21 @@ export type DiscordVoiceAutoJoinConfig = {
   channelId: string;
 };
 
+export type DiscordVoiceSessionCutoffConfig = {
+  /** Enable wall-clock session cutoff warnings/restart. Default: false. */
+  enabled?: boolean;
+  /** Expected hard runtime cutoff in minutes. Default: 40. */
+  cutoffMinutes?: number;
+  /** Primary spoken warning time after session start, in minutes. Default: 35. */
+  firstWarningMinutes?: number;
+  /** Final spoken warning lead time before cutoff, in seconds. Default: 30. */
+  finalWarningSecondsBeforeCutoff?: number;
+  /** Emit restart request before fallback auto-restart. Default: true. */
+  requireConfirmation?: boolean;
+  /** Restart automatically before the cutoff if still connected. Default: true. */
+  autoRestartOnTimeout?: boolean;
+};
+
 export type DiscordVoiceConfig = {
   /** Enable Discord voice channel conversations (default: true). */
   enabled?: boolean;
@@ -113,6 +128,8 @@ export type DiscordVoiceConfig = {
   decryptionFailureTolerance?: number;
   /** Optional TTS overrides for Discord voice output. */
   tts?: TtsConfig;
+  /** Wall-clock runtime cutoff warnings and restart fallback. */
+  sessionCutoff?: DiscordVoiceSessionCutoffConfig;
 };
 
 export type DiscordExecApprovalConfig = {

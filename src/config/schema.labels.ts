@@ -683,6 +683,17 @@ export const FIELD_LABELS: Record<string, string> = {
   "channels.discord.voice.daveEncryption": "Discord Voice DAVE Encryption",
   "channels.discord.voice.decryptionFailureTolerance": "Discord Voice Decrypt Failure Tolerance",
   "channels.discord.voice.tts": "Discord Voice Text-to-Speech",
+  "channels.discord.voice.sessionCutoff": "Discord Voice Session Cutoff",
+  "channels.discord.voice.sessionCutoff.enabled": "Discord Voice Session Cutoff Enabled",
+  "channels.discord.voice.sessionCutoff.cutoffMinutes": "Discord Voice Session Cutoff Minutes",
+  "channels.discord.voice.sessionCutoff.firstWarningMinutes":
+    "Discord Voice Session Cutoff First Warning Minutes",
+  "channels.discord.voice.sessionCutoff.finalWarningSecondsBeforeCutoff":
+    "Discord Voice Session Cutoff Final Warning Seconds",
+  "channels.discord.voice.sessionCutoff.requireConfirmation":
+    "Discord Voice Session Cutoff Require Confirmation",
+  "channels.discord.voice.sessionCutoff.autoRestartOnTimeout":
+    "Discord Voice Session Cutoff Auto-Restart",
   "channels.discord.pluralkit.enabled": "Discord PluralKit Enabled",
   "channels.discord.pluralkit.token": "Discord PluralKit Token",
   "channels.discord.activity": "Discord Presence Activity",

@@ -7,6 +7,7 @@ const {
   entersStateMock,
   createAudioPlayerMock,
   resolveAgentRouteMock,
+  textToSpeechMock,
 } = vi.hoisted(() => {
   type EventHandler = (...args: unknown[]) => unknown;
   type MockConnection = {
@@ -62,6 +63,7 @@ const {
       state: { status: "idle" },
     })),
     resolveAgentRouteMock: vi.fn(() => ({ agentId: "agent-1", sessionKey: "discord:g1:c1" })),
+    textToSpeechMock: vi.fn(async () => ({ success: true, audioPath: "/tmp/warning.wav" })),
   };
 });
 
@@ -81,8 +83,35 @@ vi.mock("@discordjs/voice", () => ({
   joinVoiceChannel: joinVoiceChannelMock,
 }));
 
+vi.mock("../../commands/agent.js", () => ({
+  agentCommand: vi.fn(async () => ({ payloads: [{ text: "ok" }] })),
+}));
+
+vi.mock("../../media-understanding/runner.js", () => ({
+  buildProviderRegistry: vi.fn(() => ({})),
+  createMediaAttachmentCache: vi.fn(() => ({ cleanup: vi.fn(async () => undefined) })),
+  normalizeMediaAttachments: vi.fn(() => []),
+  runCapability: vi.fn(async () => ({ outputs: [] })),
+}));
+
 vi.mock("../../routing/resolve-route.js", () => ({
   resolveAgentRoute: resolveAgentRouteMock,
+}));
+
+vi.mock("../../tts/tts.js", () => {
+  return {
+    resolveTtsConfig: vi.fn(() => ({ modelOverrides: {} })),
+    textToSpeech: textToSpeechMock,
+  };
+});
+
+vi.mock("../../tts/tts-core.js", () => ({
+  parseTtsDirectives: vi.fn((text: string) => ({
+    cleanedText: text,
+    overrides: {},
+    warnings: [],
+    hasDirective: false,
+  })),
 }));
 
 let managerModule: typeof import("./manager.js");
@@ -122,6 +151,7 @@ describe("DiscordVoiceManager", () => {
     entersStateMock.mockResolvedValue(undefined);
     createAudioPlayerMock.mockClear();
     resolveAgentRouteMock.mockClear();
+    textToSpeechMock.mockClear();
   });
 
   it("keeps the new session when an old disconnected handler fires", async () => {
@@ -233,6 +263,77 @@ describe("DiscordVoiceManager", () => {
         decryptionFailureTolerance: 8,
       }),
     );
+  });
+
+  it("speaks the primary session cutoff warning through TTS", async () => {
+    vi.useFakeTimers();
+    try {
+      const manager = new managerModule.DiscordVoiceManager({
+        client: createClient() as never,
+        cfg: {},
+        discordConfig: {
+          voice: {
+            sessionCutoff: {
+              enabled: true,
+              cutoffMinutes: 1,
+              firstWarningMinutes: 0.001,
+              autoRestartOnTimeout: false,
+            },
+          },
+        },
+        accountId: "default",
+        runtime: createRuntime(),
+      });
+
+      await manager.join({ guildId: "g1", channelId: "c1" });
+      await vi.advanceTimersByTimeAsync(60);
+
+      expect(textToSpeechMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("getting close to the runtime limit"),
+          channel: "discord",
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("auto-restarts before the session cutoff fallback expires", async () => {
+    vi.useFakeTimers();
+    try {
+      const manager = new managerModule.DiscordVoiceManager({
+        client: createClient() as never,
+        cfg: {},
+        discordConfig: {
+          voice: {
+            sessionCutoff: {
+              enabled: true,
+              cutoffMinutes: 0.01,
+              firstWarningMinutes: 0.001,
+              finalWarningSecondsBeforeCutoff: 0.2,
+              autoRestartOnTimeout: true,
+            },
+          },
+        },
+        accountId: "default",
+        runtime: createRuntime(),
+      });
+
+      await manager.join({ guildId: "g1", channelId: "c1" });
+      await vi.advanceTimersByTimeAsync(600);
+      await Promise.resolve();
+
+      expect(joinVoiceChannelMock).toHaveBeenCalledTimes(2);
+      expect(textToSpeechMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("I'm back"),
+          channel: "discord",
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("attempts rejoin after repeated decrypt failures", async () => {
