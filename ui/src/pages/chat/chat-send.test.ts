@@ -22,8 +22,8 @@ import {
   getPendingChatPickerPatch,
   switchChatFastMode,
   switchChatThinkingLevel,
-  trackPendingChatPickerPatch,
 } from "./chat-session.ts";
+import { trackPendingChatSettingsPatch } from "./chat-settings-patches.ts";
 import type { ChatPageHost } from "./chat-state.ts";
 import {
   admitStoredChatComposerQueueItem,
@@ -311,7 +311,7 @@ function makeHost(overrides?: Partial<TestChatHost>): TestChatHost {
   for (const [sessionKey, patchPromise] of Object.entries(
     overrides?.pendingSettingsPatches ?? {},
   )) {
-    trackPendingChatPickerPatch(resolvedHost, sessionKey, patchPromise);
+    trackPendingChatSettingsPatch(resolvedHost, sessionKey, patchPromise);
   }
   return resolvedHost;
 }
@@ -2009,19 +2009,22 @@ describe("handleSendChat", () => {
     const send = handleSendChat(host);
     await Promise.resolve();
 
-    expect(request.mock.calls.filter(([method]) => method === "sessions.patch")).toHaveLength(2);
+    expect(request.mock.calls.filter(([method]) => method === "sessions.patch")).toHaveLength(1);
     expect(request.mock.calls.some(([method]) => method === "chat.send")).toBe(false);
     expect(host.chatQueue[0]).toMatchObject({
       sendState: "waiting-model",
       text: "use the new reasoning and speed",
     });
 
-    fastModeUpdate.resolve({});
-    await fastModePatch;
+    thinkingUpdate.resolve({});
+    await thinkingPatch;
+    await vi.waitFor(() =>
+      expect(request.mock.calls.filter(([method]) => method === "sessions.patch")).toHaveLength(2),
+    );
     expect(request.mock.calls.some(([method]) => method === "chat.send")).toBe(false);
 
-    thinkingUpdate.resolve({});
-    await Promise.all([thinkingPatch, send]);
+    fastModeUpdate.resolve({});
+    await Promise.all([fastModePatch, send]);
     const payload = findRequestPayload(
       request as unknown as MockCallSource,
       "chat.send",
