@@ -282,6 +282,7 @@ import {
   GatewaySuspendStatusResultSchema,
   GatewaySuspendTaskBlockerSchema,
 } from "./gateway-suspend.js";
+import { LogMigrationProtocolSchemas } from "./log-migration-protocol-schemas.js";
 import {
   ChatAbortedEventSchema,
   ChatAbortParamsSchema,
@@ -297,19 +298,7 @@ import {
   ChatSendParamsSchema,
   ChatToolTitlesParamsSchema,
   ChatToolTitlesResultSchema,
-  LogsTailParamsSchema,
-  LogsTailResultSchema,
 } from "./logs-chat.js";
-import {
-  MemoryMigrationItemSchema,
-  MemoryMigrationItemStatusSchema,
-  MemoryMigrationProviderPlanSchema,
-  MemoryMigrationSummarySchema,
-  MigrationsMemoryApplyParamsSchema,
-  MigrationsMemoryApplyResultSchema,
-  MigrationsMemoryPlanParamsSchema,
-  MigrationsMemoryPlanResultSchema,
-} from "./migrations.js";
 import {
   NodeDescribeParamsSchema,
   NodeEventParamsSchema,
@@ -876,16 +865,7 @@ export const ProtocolSchemas = {
   CronRunParams: CronRunParamsSchema,
   CronRunsParams: CronRunsParamsSchema,
   CronRunLogEntry: CronRunLogEntrySchema,
-  LogsTailParams: LogsTailParamsSchema,
-  LogsTailResult: LogsTailResultSchema,
-  MemoryMigrationItemStatus: MemoryMigrationItemStatusSchema,
-  MemoryMigrationItem: MemoryMigrationItemSchema,
-  MemoryMigrationSummary: MemoryMigrationSummarySchema,
-  MemoryMigrationProviderPlan: MemoryMigrationProviderPlanSchema,
-  MigrationsMemoryPlanParams: MigrationsMemoryPlanParamsSchema,
-  MigrationsMemoryPlanResult: MigrationsMemoryPlanResultSchema,
-  MigrationsMemoryApplyParams: MigrationsMemoryApplyParamsSchema,
-  MigrationsMemoryApplyResult: MigrationsMemoryApplyResultSchema,
+  ...LogMigrationProtocolSchemas,
   TerminalOpenParams: TerminalOpenParamsSchema,
   TerminalOpenResult: TerminalOpenResultSchema,
   TerminalInputParams: TerminalInputParamsSchema,
