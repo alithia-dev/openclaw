@@ -56,6 +56,11 @@ const SETTINGS_ROUTE_PATHS = [
   { routeId: "sessions", path: "/settings/sessions", alias: "/sessions" },
   { routeId: "nodes", path: "/settings/devices", alias: "/nodes" },
   { routeId: "agents", path: "/settings/agents", alias: "/agents" },
+  {
+    routeId: "memory-import",
+    path: "/settings/memory-import",
+    alias: "/memory-import",
+  },
   { routeId: "ai-agents", path: "/settings/ai-agents", alias: "/ai-agents" },
   {
     routeId: "model-providers",
@@ -99,6 +104,7 @@ describe("navigationIconForRoute", () => {
       about: "fileText",
       "ai-agents": "brain",
       "model-providers": "plug",
+      "memory-import": "download",
       debug: "bug",
       logs: "scrollText",
     });
@@ -149,6 +155,7 @@ describe("titleForRoute", () => {
       about: "About",
       "ai-agents": "AI & Agents",
       "model-providers": "Model Providers",
+      "memory-import": "Import Memory",
       debug: "Debug",
       logs: "Logs",
     });
@@ -185,6 +192,7 @@ describe("subtitleForRoute", () => {
       about: "Control UI and connected Gateway build identity.",
       "ai-agents": "Agents, models, skills, tools, memory, session.",
       "model-providers": "Configured providers with plan, quota, and cost.",
+      "memory-import": "Bring Codex and Claude Code memory into an agent workspace.",
       debug: "Snapshots, events, RPC.",
       logs: "Live gateway logs.",
     });
@@ -402,6 +410,7 @@ describe("SIDEBAR_NAV_ROUTES", () => {
       "agents",
       "ai-agents",
       "sessions",
+      "memory-import",
       "model-providers",
       "automation",
       "mcp",

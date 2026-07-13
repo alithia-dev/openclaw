@@ -191,6 +191,10 @@ const loadPluginsHandlers = lazyHandlerModule(
   () => import("./server-methods/plugins.js"),
   (module) => module.pluginsHandlers,
 );
+const loadMigrationsHandlers = lazyHandlerModule(
+  () => import("./server-methods/migrations.js"),
+  (module) => module.migrationsHandlers,
+);
 const loadPushHandlers = lazyHandlerModule(
   () => import("./server-methods/push.js"),
   (module) => module.pushHandlers,
@@ -789,6 +793,10 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...createLazyCoreHandlers({
     methods: ["sessions.diff"],
     loadHandlers: loadSessionsDiffHandlers,
+  }),
+  ...createLazyCoreHandlers({
+    methods: ["migrations.memory.plan", "migrations.memory.apply"],
+    loadHandlers: loadMigrationsHandlers,
   }),
 };
 

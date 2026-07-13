@@ -301,6 +301,16 @@ import {
   LogsTailResultSchema,
 } from "./logs-chat.js";
 import {
+  MemoryMigrationItemSchema,
+  MemoryMigrationItemStatusSchema,
+  MemoryMigrationProviderPlanSchema,
+  MemoryMigrationSummarySchema,
+  MigrationsMemoryApplyParamsSchema,
+  MigrationsMemoryApplyResultSchema,
+  MigrationsMemoryPlanParamsSchema,
+  MigrationsMemoryPlanResultSchema,
+} from "./migrations.js";
+import {
   NodeDescribeParamsSchema,
   NodeEventParamsSchema,
   NodeEventResultSchema,
@@ -868,6 +878,14 @@ export const ProtocolSchemas = {
   CronRunLogEntry: CronRunLogEntrySchema,
   LogsTailParams: LogsTailParamsSchema,
   LogsTailResult: LogsTailResultSchema,
+  MemoryMigrationItemStatus: MemoryMigrationItemStatusSchema,
+  MemoryMigrationItem: MemoryMigrationItemSchema,
+  MemoryMigrationSummary: MemoryMigrationSummarySchema,
+  MemoryMigrationProviderPlan: MemoryMigrationProviderPlanSchema,
+  MigrationsMemoryPlanParams: MigrationsMemoryPlanParamsSchema,
+  MigrationsMemoryPlanResult: MigrationsMemoryPlanResultSchema,
+  MigrationsMemoryApplyParams: MigrationsMemoryApplyParamsSchema,
+  MigrationsMemoryApplyResult: MigrationsMemoryApplyResultSchema,
   TerminalOpenParams: TerminalOpenParamsSchema,
   TerminalOpenResult: TerminalOpenResultSchema,
   TerminalInputParams: TerminalInputParamsSchema,
