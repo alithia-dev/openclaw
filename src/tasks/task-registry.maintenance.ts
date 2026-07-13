@@ -63,17 +63,15 @@ import { listTaskRegistryRecordsByRuntimeSourceIdFromSqlite } from "./task-regis
 import { summarizeTaskRecords } from "./task-registry.summary.js";
 import type { TaskRecord, TaskRegistrySummary, TaskStatus } from "./task-registry.types.js";
 import type { ActiveTaskRestartBlocker } from "./task-restart-blocker.js";
-import {
-  resolveEffectiveTaskCleanupAfter,
-  resolveTaskCleanupAfter,
-  resolveTaskRetentionMs,
-} from "./task-retention.js";
+import { resolveEffectiveTaskCleanupAfter, resolveTaskCleanupAfter } from "./task-retention.js";
 
 const log = createSubsystemLogger("tasks/task-registry-maintenance");
 const TASK_RECONCILE_GRACE_MS = 5 * 60_000;
 const CHILDLESS_NATIVE_SUBAGENT_RECONCILE_GRACE_MS = 30 * 60_000;
 const TASK_STALE_RUNNING_MS = 30 * 60_000;
 const TASK_SWEEP_INTERVAL_MS = 60_000;
+// Replaces configurable cron.runLog.keepLines with one ledger-owned bound.
+export const CRON_HISTORY_KEEP_PER_JOB = 2000;
 
 /**
  * Number of tasks to process before yielding to the event loop.
@@ -482,22 +480,61 @@ function hasDetachedTaskRecoveryHook(): boolean {
   return Boolean(getDetachedTaskLifecycleRuntime().tryRecoverTaskBeforeMarkLost);
 }
 
-function shouldPruneTerminalTask(task: TaskRecord, now: number): boolean {
+function collectCronHistoryOverflowTaskIds(tasks: TaskRecord[]): Set<string> {
+  // sourceId is the ledger's global cron-job owner key; storeKey remains only
+  // a history-read partition and must not split the per-source retention cap.
+  const bySource = new Map<string, TaskRecord[]>();
+  for (const task of tasks) {
+    if (
+      task.runtime !== "cron" ||
+      !task.sourceId ||
+      !isTerminalTask(task) ||
+      task.status === "lost"
+    ) {
+      continue;
+    }
+    const rows = bySource.get(task.sourceId) ?? [];
+    rows.push(task);
+    bySource.set(task.sourceId, rows);
+  }
+  const overflow = new Set<string>();
+  for (const rows of bySource.values()) {
+    rows.sort((left, right) => {
+      const leftAt = left.endedAt ?? left.lastEventAt ?? left.createdAt;
+      const rightAt = right.endedAt ?? right.lastEventAt ?? right.createdAt;
+      return rightAt - leftAt || right.taskId.localeCompare(left.taskId);
+    });
+    for (const task of rows.slice(CRON_HISTORY_KEEP_PER_JOB)) {
+      overflow.add(task.taskId);
+    }
+  }
+  return overflow;
+}
+
+function shouldPruneTerminalTask(
+  task: TaskRecord,
+  now: number,
+  cronHistoryOverflowTaskIds: ReadonlySet<string>,
+): boolean {
   if (!isTerminalTask(task)) {
     return false;
   }
-  if (typeof task.cleanupAfter === "number") {
-    return now >= resolveEffectiveTaskCleanupAfter(task);
+  if (cronHistoryOverflowTaskIds.has(task.taskId)) {
+    return true;
   }
-  const terminalAt = task.endedAt ?? task.lastEventAt ?? task.createdAt;
-  return now - terminalAt >= resolveTaskRetentionMs(task.status);
+  const cleanupAfter = resolveEffectiveTaskCleanupAfter(task);
+  return cleanupAfter !== undefined && now >= cleanupAfter;
 }
 
 function shouldStampCleanupAfter(task: TaskRecord): boolean {
-  return isTerminalTask(task) && typeof task.cleanupAfter !== "number";
+  return (
+    isTerminalTask(task) &&
+    typeof task.cleanupAfter !== "number" &&
+    resolveTaskCleanupAfter(task) !== undefined
+  );
 }
 
-function resolveCleanupAfter(task: TaskRecord): number {
+function resolveCleanupAfter(task: TaskRecord): number | undefined {
   return resolveTaskCleanupAfter(task);
 }
 
@@ -696,7 +733,7 @@ function markTaskLost(
     ...task,
     status: "lost",
     endedAt: lostAt,
-  });
+  })!;
   const updated =
     taskRegistryMaintenanceRuntime.markTaskLostById({
       taskId: task.taskId,
@@ -888,7 +925,9 @@ export function previewTaskRegistryMaintenance(): TaskRegistryMaintenanceSummary
   let pruned = 0;
   const cronRecoveryContext = createCronRecoveryContext();
   const backingSessionContext = createBackingSessionLookupContext();
-  for (const task of taskRegistryMaintenanceRuntime.listTaskRecords()) {
+  const tasks = taskRegistryMaintenanceRuntime.listTaskRecords();
+  const cronHistoryOverflowTaskIds = collectCronHistoryOverflowTaskIds(tasks);
+  for (const task of tasks) {
     if (resolveDurableCronTaskRecovery(task, cronRecoveryContext)) {
       recovered += 1;
       continue;
@@ -897,7 +936,7 @@ export function previewTaskRegistryMaintenance(): TaskRegistryMaintenanceSummary
       reconciled += 1;
       continue;
     }
-    if (shouldPruneTerminalTask(task, now)) {
+    if (shouldPruneTerminalTask(task, now, cronHistoryOverflowTaskIds)) {
       pruned += 1;
       continue;
     }
@@ -1006,6 +1045,7 @@ export async function runTaskRegistryMaintenance(): Promise<TaskRegistryMaintena
   let cleanupStamped = 0;
   let pruned = 0;
   const tasks = taskRegistryMaintenanceRuntime.listTaskRecords();
+  const cronHistoryOverflowTaskIds = collectCronHistoryOverflowTaskIds(tasks);
   const cronRecoveryContext = createCronRecoveryContext();
   const backingSessionContext = createBackingSessionLookupContext();
   const recoveryHookRegistered = hasDetachedTaskRecoveryHook();
@@ -1075,7 +1115,7 @@ export async function runTaskRegistryMaintenance(): Promise<TaskRegistryMaintena
     }
     await cleanupTerminalAcpSession(current);
     if (
-      shouldPruneTerminalTask(current, now) &&
+      shouldPruneTerminalTask(current, now, cronHistoryOverflowTaskIds) &&
       taskRegistryMaintenanceRuntime.deleteTaskRecordById(current.taskId)
     ) {
       pruned += 1;
@@ -1085,14 +1125,17 @@ export async function runTaskRegistryMaintenance(): Promise<TaskRegistryMaintena
       }
       continue;
     }
-    if (
-      shouldStampCleanupAfter(current) &&
-      taskRegistryMaintenanceRuntime.setTaskCleanupAfterById({
-        taskId: current.taskId,
-        cleanupAfter: resolveCleanupAfter(current),
-      })
-    ) {
-      cleanupStamped += 1;
+    if (shouldStampCleanupAfter(current)) {
+      const cleanupAfter = resolveCleanupAfter(current);
+      if (
+        cleanupAfter !== undefined &&
+        taskRegistryMaintenanceRuntime.setTaskCleanupAfterById({
+          taskId: current.taskId,
+          cleanupAfter,
+        })
+      ) {
+        cleanupStamped += 1;
+      }
     }
     processed += 1;
     if (processed % SWEEP_YIELD_BATCH_SIZE === 0) {

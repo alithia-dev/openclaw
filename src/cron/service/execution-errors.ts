@@ -83,7 +83,7 @@ function isAbortError(err: unknown): boolean {
   return err.name === "AbortError" || err.message === timeoutErrorMessage();
 }
 
-/** Normalizes thrown cron run failures into stable log/run-log text. */
+/** Normalizes thrown cron run failures into stable log/run-history text. */
 export function normalizeCronRunErrorText(err: unknown): string {
   if (isAbortError(err)) {
     return timeoutErrorMessage();
