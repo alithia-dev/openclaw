@@ -2429,7 +2429,7 @@ export const KNIP_UNUSED_EXPORT_BASELINE = [
   "ui/src/pages/chat/chat-send.ts: sendDetachedChatMessage",
   "ui/src/pages/chat/chat-send.ts: sendSteerChatMessage",
   "ui/src/pages/chat/chat-session.ts: buildChatSessionListOptions",
-  "ui/src/pages/chat/chat-session.ts: trackPendingChatPickerPatch",
+  "ui/src/pages/chat/chat-settings-patches.ts: trackPendingChatSettingsPatch",
   "ui/src/pages/chat/chat-state.ts: refreshChat",
   "ui/src/pages/chat/chat-thread.ts: buildChatItems",
   "ui/src/pages/chat/chat-thread.ts: BuildChatItemsProps",
