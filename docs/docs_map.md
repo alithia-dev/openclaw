@@ -2566,6 +2566,7 @@ Do not edit it by hand; run `pnpm docs:map:gen`.
 - Headings:
   - H2: How it works
   - H2: What goes where
+  - H2: Import from coding assistants
   - H2: Action-sensitive memories
   - H2: Inferred commitments
   - H2: Memory tools
@@ -10278,6 +10279,7 @@ Do not edit it by hand; run `pnpm docs:map:gen`.
   - H2: Sidebar navigation
   - H2: New session page
   - H2: What it can do (today)
+  - H2: Import assistant memory
   - H2: MCP page
   - H2: Activity tab
   - H2: Operator terminal
