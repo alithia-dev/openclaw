@@ -40,6 +40,9 @@ const DiscordIdSchema = z
     message: "Discord IDs must be strings (wrap numeric IDs in quotes).",
   });
 const DiscordIdListSchema = z.array(DiscordIdSchema);
+const DiscordBotIdListSchema = z.array(
+  z.string().regex(/^\d+$/, "Discord allowed bot entries must be user IDs."),
+);
 
 const TelegramInlineButtonsScopeSchema = z.enum(["off", "dm", "group", "all", "allowlist"]);
 
@@ -332,7 +335,8 @@ export const DiscordAccountSchema = z
     configWrites: z.boolean().optional(),
     token: z.string().optional().register(sensitive),
     proxy: z.string().optional(),
-    allowBots: z.boolean().optional(),
+    allowBots: z.union([z.boolean(), z.literal("mentions")]).optional(),
+    allowedBots: DiscordBotIdListSchema.optional(),
     dangerouslyAllowNameMatching: z.boolean().optional(),
     groupPolicy: GroupPolicySchema.optional().default("allowlist"),
     historyLimit: z.number().int().min(0).optional(),

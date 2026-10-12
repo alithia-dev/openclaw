@@ -1262,6 +1262,10 @@ export const FIELD_HELP: Record<string, string> = {
     "Allow Mattermost to write config in response to channel events/commands (default: true).",
   "channels.discord.configWrites":
     "Allow Discord to write config in response to channel events/commands (default: true).",
+  "channels.discord.allowBots":
+    'Allow bot-authored Discord messages to trigger replies. Use false by default, true for channel-policy gated bot messages, or "mentions" to additionally require a mention.',
+  "channels.discord.allowedBots":
+    "Discord bot user IDs allowed to trigger replies. When configured, bot-authored messages from all other bot IDs are ignored even if they mention the bot.",
   "channels.discord.token":
     "Discord bot token used for gateway and REST API authentication for this provider account. Keep this secret out of committed config and rotate immediately after any leak.",
   "channels.discord.proxy":

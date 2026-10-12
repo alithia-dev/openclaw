@@ -14,6 +14,7 @@ import type { GroupToolPolicyBySenderConfig, GroupToolPolicyConfig } from "./typ
 import type { TtsConfig } from "./types.tts.js";
 
 export type DiscordStreamMode = "off" | "partial" | "block" | "progress";
+export type DiscordAllowBotsMode = boolean | "mentions";
 
 export type DiscordDmConfig = {
   /** If false, ignore all incoming Discord DMs. Default: true. */
@@ -187,7 +188,9 @@ export type DiscordAccountConfig = {
   /** HTTP(S) proxy URL for Discord gateway WebSocket connections. */
   proxy?: string;
   /** Allow bot-authored messages to trigger replies (default: false). */
-  allowBots?: boolean;
+  allowBots?: DiscordAllowBotsMode;
+  /** Bot user IDs allowed to trigger replies when bot-authored messages are enabled. */
+  allowedBots?: string[];
   /**
    * Break-glass override: allow mutable identity matching (names/tags/slugs) in allowlists.
    * Default behavior is ID-only matching.

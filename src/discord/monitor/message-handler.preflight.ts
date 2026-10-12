@@ -103,6 +103,43 @@ export function shouldIgnoreBoundThreadWebhookMessage(params: {
   return webhookId === boundWebhookId;
 }
 
+function parseDiscordAllowedBotIds(raw: string | undefined): string[] {
+  if (!raw?.trim()) {
+    return [];
+  }
+  return raw
+    .split(/[\s,]+/)
+    .map((entry) => entry.trim().replace(/^<@!?/, "").replace(/>$/, ""))
+    .filter((entry) => /^\d+$/.test(entry));
+}
+
+export function resolveDiscordAllowedBotIds(params: {
+  configured?: string[];
+  env?: NodeJS.ProcessEnv;
+}): Set<string> {
+  const configured = params.configured ?? [];
+  const envAllowed = parseDiscordAllowedBotIds(params.env?.DISCORD_ALLOWED_BOTS);
+  return new Set(
+    [...configured, ...envAllowed].map((entry) => String(entry).trim()).filter(Boolean),
+  );
+}
+
+export function shouldAcceptDiscordBotAuthor(params: {
+  authorId: string;
+  allowBots?: boolean | "mentions";
+  allowedBotIds?: Set<string>;
+  senderIsPluralKit?: boolean;
+}): boolean {
+  if (params.senderIsPluralKit) {
+    return true;
+  }
+  const allowedBotIds = params.allowedBotIds ?? new Set<string>();
+  if (allowedBotIds.size > 0) {
+    return allowedBotIds.has(params.authorId);
+  }
+  return params.allowBots === true || params.allowBots === "mentions";
+}
+
 export async function preflightDiscordMessage(
   params: DiscordMessagePreflightParams,
 ): Promise<DiscordMessagePreflightContext | null> {
@@ -122,6 +159,10 @@ export async function preflightDiscordMessage(
   }
 
   const allowBots = params.discordConfig?.allowBots ?? false;
+  const allowedBotIds = resolveDiscordAllowedBotIds({
+    configured: params.discordConfig?.allowedBots,
+    env: process.env,
+  });
   if (params.botUserId && author.id === params.botUserId) {
     // Always ignore own messages to prevent self-reply loops
     return null;
@@ -148,8 +189,19 @@ export async function preflightDiscordMessage(
   });
 
   if (author.bot) {
-    if (!allowBots && !sender.isPluralKit) {
-      logVerbose("discord: drop bot message (allowBots=false)");
+    if (
+      !shouldAcceptDiscordBotAuthor({
+        authorId: author.id,
+        allowBots,
+        allowedBotIds,
+        senderIsPluralKit: sender.isPluralKit,
+      })
+    ) {
+      logVerbose(
+        allowedBotIds.size > 0
+          ? "discord: drop bot message (not in allowedBots)"
+          : "discord: drop bot message (allowBots=false)",
+      );
       return null;
     }
   }
@@ -644,6 +696,18 @@ export async function preflightDiscordMessage(
       });
       return null;
     }
+  }
+
+  if (
+    author.bot &&
+    !sender.isPluralKit &&
+    allowBots === "mentions" &&
+    !effectiveWasMentioned &&
+    !mentionGate.shouldBypassMention
+  ) {
+    logDebug(`[discord-preflight] drop: bot missing mention`);
+    logVerbose("discord: drop bot message (allowBots=mentions, missing mention)");
+    return null;
   }
 
   if (isGuildMessage && hasAccessRestrictions && !memberAllowed) {

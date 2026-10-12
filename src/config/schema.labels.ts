@@ -659,6 +659,8 @@ export const FIELD_LABELS: Record<string, string> = {
   "channels.discord.dmPolicy": "Discord DM Policy",
   "channels.discord.dm.policy": "Discord DM Policy",
   "channels.discord.configWrites": "Discord Config Writes",
+  "channels.discord.allowBots": "Discord Allow Bot Messages",
+  "channels.discord.allowedBots": "Discord Allowed Bot IDs",
   "channels.discord.proxy": "Discord Proxy URL",
   "channels.discord.commands.native": "Discord Native Commands",
   "channels.discord.commands.nativeSkills": "Discord Native Skill Commands",
