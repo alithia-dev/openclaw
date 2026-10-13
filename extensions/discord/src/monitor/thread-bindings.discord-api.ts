@@ -55,6 +55,16 @@ function isThreadChannelType(type: unknown): boolean {
   );
 }
 
+export function assertDiscordThreadBindingParentType(type: unknown): void {
+  if (type === ChannelType.GuildText || type === ChannelType.GuildAnnouncement) {
+    return;
+  }
+  const renderedType = typeof type === "number" && Number.isFinite(type) ? String(type) : "unknown";
+  throw new Error(
+    `Discord thread parent must be a text or announcement channel (type 0 or 5); received type ${renderedType}.`,
+  );
+}
+
 function normalizeDiscordBindingChannelId(raw?: string | null): string | null {
   const trimmed = normalizeOptionalString(raw) ?? "";
   if (!trimmed) {
@@ -283,6 +293,13 @@ export async function createThreadForBinding(params: {
   threadName: string;
 }): Promise<string | null> {
   try {
+    const rest = createDiscordRestClient({
+      cfg: params.cfg,
+      accountId: params.accountId,
+      token: params.token,
+    }).rest;
+    const parent = await getChannel(rest, params.channelId);
+    assertDiscordThreadBindingParentType(resolveDiscordChannelInfoSafe(parent).type);
     const created = await createThreadDiscord(
       params.channelId,
       {
