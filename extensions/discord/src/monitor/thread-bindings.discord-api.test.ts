@@ -4,6 +4,7 @@ import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import * as discordClientModule from "../client.js";
 import * as discordSendModule from "../send.js";
+import * as discordSendMessagesModule from "../send.messages.js";
 import { createDiscordSendReceipt } from "../send.receipt.js";
 import { EMPTY_DISCORD_TEST_CONFIG } from "../test-support/config.js";
 import type { ThreadBindingRecord } from "./thread-bindings.types.js";
@@ -21,6 +22,7 @@ const DEFAULT_SEND_RESULT = {
 const restGet = vi.fn<(...args: unknown[]) => Promise<unknown>>();
 const sendMessageDiscord = vi.fn<typeof discordSendModule.sendMessageDiscord>();
 const sendWebhookMessageDiscord = vi.fn<typeof discordSendModule.sendWebhookMessageDiscord>();
+const createThreadDiscord = vi.fn<typeof discordSendMessagesModule.createThreadDiscord>();
 const createDiscordRestClient = vi.fn<typeof discordClientModule.createDiscordRestClient>(
   () =>
     ({
@@ -33,10 +35,15 @@ const createDiscordRestClient = vi.fn<typeof discordClientModule.createDiscordRe
 let maybeSendBindingMessage: typeof import("./thread-bindings.discord-api.js").maybeSendBindingMessage;
 let resolveChannelIdForBinding: typeof import("./thread-bindings.discord-api.js").resolveChannelIdForBinding;
 let isDiscordThreadGoneError: typeof import("./thread-bindings.discord-api.js").isDiscordThreadGoneError;
+let createThreadForBinding: typeof import("./thread-bindings.discord-api.js").createThreadForBinding;
 
 beforeAll(async () => {
-  ({ isDiscordThreadGoneError, maybeSendBindingMessage, resolveChannelIdForBinding } =
-    await import("./thread-bindings.discord-api.js"));
+  ({
+    createThreadForBinding,
+    isDiscordThreadGoneError,
+    maybeSendBindingMessage,
+    resolveChannelIdForBinding,
+  } = await import("./thread-bindings.discord-api.js"));
 });
 
 function resolveTestChannelIdForBinding(
@@ -64,6 +71,7 @@ describe("resolveChannelIdForBinding", () => {
     restGet.mockReset();
     sendMessageDiscord.mockReset().mockResolvedValue(DEFAULT_SEND_RESULT);
     sendWebhookMessageDiscord.mockReset().mockResolvedValue(DEFAULT_SEND_RESULT);
+    createThreadDiscord.mockReset().mockResolvedValue({ id: "thread-created" });
     createDiscordRestClient.mockReset().mockImplementation(
       () =>
         ({
@@ -83,6 +91,9 @@ describe("resolveChannelIdForBinding", () => {
     );
     vi.spyOn(discordSendModule, "sendWebhookMessageDiscord").mockImplementation((...args) =>
       sendWebhookMessageDiscord(...args),
+    );
+    vi.spyOn(discordSendMessagesModule, "createThreadDiscord").mockImplementation((...args) =>
+      createThreadDiscord(...args),
     );
   });
 
@@ -195,6 +206,62 @@ describe("resolveChannelIdForBinding", () => {
     });
 
     expect(resolved).toBe("forum-1");
+  });
+});
+
+describe("createThreadForBinding", () => {
+  beforeEach(() => {
+    restGet.mockReset();
+    createThreadDiscord.mockClear();
+  });
+
+  it.each([ChannelType.GuildText, ChannelType.GuildAnnouncement])(
+    "creates a binding thread for allowed parent type %s",
+    async (type) => {
+      restGet.mockResolvedValueOnce({ id: "parent-1", type });
+
+      const result = await createThreadForBinding({
+        cfg: EMPTY_DISCORD_TEST_CONFIG,
+        accountId: "default",
+        channelId: "parent-1",
+        threadName: "child",
+      });
+
+      expect(result).toBe("thread-created");
+      expect(createThreadDiscord).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("fails closed before creation when the parent is already a thread", async () => {
+    restGet.mockResolvedValueOnce({
+      id: "thread-parent",
+      type: ChannelType.PublicThread,
+      parent_id: "parent-1",
+    });
+
+    const result = await createThreadForBinding({
+      cfg: EMPTY_DISCORD_TEST_CONFIG,
+      accountId: "default",
+      channelId: "thread-parent",
+      threadName: "nested",
+    });
+
+    expect(result).toBeNull();
+    expect(createThreadDiscord).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when parent metadata cannot be resolved", async () => {
+    restGet.mockRejectedValueOnce(new Error("metadata unavailable"));
+
+    const result = await createThreadForBinding({
+      cfg: EMPTY_DISCORD_TEST_CONFIG,
+      accountId: "default",
+      channelId: "parent-1",
+      threadName: "child",
+    });
+
+    expect(result).toBeNull();
+    expect(createThreadDiscord).not.toHaveBeenCalled();
   });
 });
 
